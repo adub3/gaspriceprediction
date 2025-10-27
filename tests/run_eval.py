@@ -1,17 +1,21 @@
+# tests/run_eval.py
 from __future__ import annotations
 
 import argparse
+import os
+from datetime import datetime
 import pandas as pd
-import numpy as np
 
 from tests.evaluation.backtest import walk_forward
-from tests.evaluation.metrics import brier_score, logloss, rocauc, calibration_table
+from tests.evaluation.metrics import (
+    evaluate_and_plot,  # new one-call wrapper
+)
 from models.linearmodel import LinearRWEventModel
 
 
 def main() -> None:
     # ----------------------------
-    # 1. Parse CLI arguments
+    # CLI
     # ----------------------------
     ap = argparse.ArgumentParser(description="Evaluate LinearRWEventModel on CSV data")
     ap.add_argument("--csv", required=True, help="Path to CSV with [date, price] columns")
@@ -19,75 +23,60 @@ def main() -> None:
     ap.add_argument("--window", type=int, default=24, help="Rolling window size (rows/periods)")
     ap.add_argument("--date_col", type=str, default=None, help="Optional name of date column")
     ap.add_argument("--price_col", type=str, default=None, help="Optional name of price column")
-    ap.add_argument(
-        "--horizon",
-        type=int,
-        default=4,
-        help="Forecast horizon in rows/periods for the event label (default: 4)",
-    )
+    ap.add_argument("--horizon", type=int, default=4, help="Forecast horizon in rows/periods")
+
+    # evaluation controls
+    ap.add_argument("--bin_method", type=str, default="quantile",
+                    choices=["quantile", "uniform"], help="Calibration binning")
+    ap.add_argument("--bins", type=int, default=20, help="Target number of bins")
+    ap.add_argument("--min_bin_n", type=int, default=50, help="Minimum samples per bin")
+    ap.add_argument("--bootstrap", type=int, default=500, help="Bootstrap iterations for CIs (0=off)")
+    ap.add_argument("--outdir", type=str, default=None, help="Output folder (default: ./eval_YYYYMMDD_HHMMSS)")
     args = ap.parse_args()
 
     # ----------------------------
-    # 2. Load and prepare data
+    # Load data
     # ----------------------------
     df = pd.read_csv(args.csv)
     date_col = args.date_col or df.columns[0]
     price_col = args.price_col or df.columns[1]
 
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-    df = (
-        df.dropna(subset=[date_col, price_col])
-        .sort_values(date_col)
-        .reset_index(drop=True)
-        .set_index(date_col)
-    )
+    df = (df.dropna(subset=[date_col, price_col])
+            .sort_values(date_col)
+            .reset_index(drop=True)
+            .set_index(date_col))
     df["price"] = df[price_col].astype(float)
     dates = df.index
 
     # ----------------------------
-    # 3. Define adapter functions (H-step event; no leakage)
+    # Label adapters
     # ----------------------------
     H = args.horizon
 
     def get_train(start: pd.Timestamp, end: pd.Timestamp):
-        """Return (X_train, y_train) for [start, end) without look-ahead."""
         win = df.loc[(dates >= start) & (dates < end), ["price"]].copy()
-
-        # Build y(t) = 1{ price(t+H) > threshold } within the window only.
         win["y_fwd"] = win["price"].shift(-H)
-
-        # Drop the last H rows (they don't have t+H inside the window).
         if len(win) <= H:
-            # Not enough rows to train — return empty frames to let the engine skip if needed
             return win.iloc[0:0][["price"]], win.iloc[0:0]["price"]
-
         X_train = win.iloc[:-H, :][["price"]]
         y_train = (win.iloc[:-H]["y_fwd"] > args.threshold).astype(int)
-
-        # In case of any remaining NaNs (edge cases), align/drop safely
         mask = y_train.notna()
         return X_train.loc[mask], y_train.loc[mask]
 
     def get_forecast_row(t: pd.Timestamp):
-        """Features for forecasting at time t."""
         return pd.DataFrame({"price": [df.loc[t, "price"]]}, index=[t])
 
     def get_outcome(t: pd.Timestamp):
-        """Evaluate the same target used in training at t+H."""
-        # t is guaranteed to be in dates (we construct forecast_dates from dates)
         pos = dates.get_indexer([t])[0]
         future_pos = pos + H
-        # Should be valid because we restrict forecast_dates to exclude the last H rows
         future_t = dates[future_pos]
         return int(df.loc[future_t, "price"] > args.threshold)
 
     # ----------------------------
-    # 4. Rolling backtest
+    # Walk-forward backtest
     # ----------------------------
     window_rows = args.window
-
-    # Only forecast dates that have an observable outcome at t+H
-    # and leave a warm-up of `window_rows` rows.
     if len(dates) < window_rows + H:
         raise ValueError("Not enough data for the chosen --window and --horizon.")
 
@@ -100,36 +89,41 @@ def main() -> None:
         get_forecast_row=get_forecast_row,
         get_outcome=get_outcome,
         model_ctor=model_ctor,
-        # Keep legacy keys expected by walk_forward, but pass row counts
         cfg={"window_months": window_rows, "step_months": 1},
     )
 
     # ----------------------------
-    # 5. Compute metrics
+    # Evaluate & Plot (one call)
     # ----------------------------
-    brier = brier_score(res.p_hat, res.y)
-    ll = logloss(res.p_hat, res.y)
-    auc = rocauc(res.p_hat, res.y)
-    calib, ece = calibration_table(res.p_hat, res.y, bins=5)
+    outdir = args.outdir or f"eval_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    os.makedirs(outdir, exist_ok=True)
+    # Save raw predictions too
+    res.to_csv(os.path.join(outdir, "linear_rw_eval_results.csv"), index=False)
 
+    summary, calib_tbl = evaluate_and_plot(
+        p_hat=res.p_hat.to_numpy(),
+        y=res.y.to_numpy().astype(int),
+        dates=res.index,  # used for rolling ECE if datetime-like
+        outdir=outdir,
+        bin_method=args.bin_method,
+        n_bins=args.bins,
+        min_bin_n=args.min_bin_n,
+        bootstrap=args.bootstrap,
+    )
+
+    # ----------------------------
+    # Print summary
+    # ----------------------------
     print("\n===== LINEAR RANDOM-WALK EVENT MODEL =====")
     print(f"Samples evaluated: {len(res)}")
-    print(f"Brier Score: {brier:.6f}")
-    print(f"LogLoss:     {ll:.6f}")
-    print(f"ROC-AUC:     {auc:.6f}")
-    print(f"ECE:         {ece:.6f}")
-
-    print("\nCalibration bins:")
-    print(calib.round(3))
-
-    print("\nFirst few results:")
-    print(res.head())
-
-    # ----------------------------
-    # 6. Save results (optional)
-    # ----------------------------
-    res.to_csv("linear_rw_eval_results.csv")
-    print("\nSaved detailed results to linear_rw_eval_results.csv")
+    for k in ("Brier","LogLoss","ROC_AUC","ECE","BSS"):
+        if k in summary:
+            print(f"{k}: {summary[k]:.6f}")
+    if "ECE_CI_low" in summary:
+        print(f"ECE 95% CI: ({summary['ECE_CI_low']:.6f}, {summary['ECE_CI_high']:.6f})")
+    print("\nCalibration bins (head):")
+    print(calib_tbl.head(10))
+    print(f"\nSaved CSVs and figures to: {outdir}")
 
 
 if __name__ == "__main__":

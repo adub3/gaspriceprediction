@@ -1,0 +1,90 @@
+############################################
+############################################
+
+# === Data (raw + intermediate) ===
+data/
+*.csv
+*.tsv
+*.parquet
+*.xlsx
+
+# === Raw data subdirs ===
+data/raw/
+
+# === Results / outputs ===
+results/
+results_*/
+results_test/
+
+# === Model checkpoints ===
+checkpoints/
+models/*.pt
+models/*.pth
+models/*.ckpt
+
+############################################
+# PYTHON BUILD / CACHE
+############################################
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.pickle
+
+# Byte-compiled libs
+*.so
+*.dylib
+
+############################################
+# PIPELINES / NOTEBOOKS
+############################################
+
+.ipynb_checkpoints/
+*.ipynb
+
+############################################
+# LOGGING & TEMPORARY FILES
+############################################
+
+*.log
+*.tmp
+*.out
+*.err
+
+# Generated images
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+
+############################################
+# VIRTUAL ENVIRONMENTS
+############################################
+
+.env
+.venv
+venv/
+ENV/
+env/
+
+############################################
+# IDE / EDITOR NOISE
+############################################
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm / JetBrains
+.idea/
+
+# MacOS Finder
+.DS_Store
+
+# Windows thumbnail cache
+Thumbs.db
+
+########################

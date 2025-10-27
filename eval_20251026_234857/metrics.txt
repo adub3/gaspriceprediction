@@ -1,0 +1,21 @@
+Brier Score: 0.056810
+LogLoss:     0.280620
+ROC-AUC:     0.967112
+ECE:         0.045673
+
+Bootstrap 95% CIs:
+ECE:     mean=0.047246, CI=(0.036443, 0.057125)
+Brier:   mean=0.056768, CI=(0.048705, 0.065755)
+LogLoss: mean=0.278611, CI=(0.228189, 0.334839)
+AUC:     mean=0.967243, CI=(0.959484, 0.974754)
+
+Brier decomposition (Murphy):
+reliability: 0.005903
+resolution: 0.146014
+uncertainty: 0.197726
+brier: 0.056810
+
+Skill vs climatology:
+Brier(model):       0.056810
+Brier(climatology): 0.197726
+Brier Skill Score:  0.712681
