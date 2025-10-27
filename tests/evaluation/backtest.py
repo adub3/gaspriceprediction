@@ -22,6 +22,7 @@ def walk_forward(
     get_outcome: Callable[[pd.Timestamp], int],
     model_ctor: Callable[[], Any],
     cfg: Dict[str, Any],
+    predictor: Callable | None = None,
 ) -> pd.DataFrame:
     """Run a rolling backtest and return a tidy DataFrame of results.
 
@@ -53,11 +54,16 @@ def walk_forward(
         if hasattr(X_future, "index"):
             leakage_guard(pd.DatetimeIndex(X_future.index), t_end)
 
-        p_series = model.predict_proba(X_future)
-        p_hat = float(p_series.iloc[-1])
+        if predictor:
+            p_hat = predictor(model, X_future)
+        else:
+            p_series = model.predict_proba(X_future)
+            p_hat = float(p_series.iloc[-1])
 
         # Realized outcome (0/1)
-        y_val = int(get_outcome(t_end))
+        y_val = get_outcome(t_end)
+        if isinstance(y_val, (int, float)):
+            y_val = y_val
 
         results.append({
             "date": t_end,
