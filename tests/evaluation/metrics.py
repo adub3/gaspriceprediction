@@ -163,8 +163,21 @@ def plot_calibration(calib_tbl: pd.DataFrame, ece: float, out_png: str) -> None:
         lo = calib_tbl["lower"].to_numpy()
         hi = calib_tbl["upper"].to_numpy()
         yerr = np.vstack([y - lo, hi - y])
-        ax.errorbar(x, y, yerr=yerr, fmt="o", capsize=2, color="tab:orange")
-    ax.set_xlabel("Predicted probability")
+        x = calib_tbl["p_bin_mid"].to_numpy()
+        y = calib_tbl["emp_rate"].to_numpy()
+
+        if {"y_lo", "y_hi"}.issubset(calib_tbl.columns):
+            y_lo = calib_tbl["y_lo"].to_numpy()
+            y_hi = calib_tbl["y_hi"].to_numpy()
+            # ensure nonnegative distances for matplotlib
+            lower = np.maximum(0.0, y - y_lo)
+            upper = np.maximum(0.0, y_hi - y)
+            yerr = np.vstack([lower, upper])
+        else:
+            yerr = None  # fallback if no CI columns
+
+        ax.errorbar(x, y, yerr=yerr, fmt="o", capsize=2, color="tab:orange")    
+        ax.set_xlabel("Predicted probability")
     ax.set_ylabel("Observed frequency")
     ax.set_title(f"Calibration (ECE = {ece:.3f})")
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
@@ -304,16 +317,9 @@ def evaluate_and_plot(
     calib_tbl.to_csv(os.path.join(outdir, "calibration_bins.csv"), index=False)
 
     # plots
-    plot_calibration(calib_tbl, ece, out_png=os.path.join(outdir, "calibration.png"))
-    plot_sharpness_hist(p_hat, out_png=os.path.join(outdir, "sharpness_hist.png"))
     plot_roc_curve(y, p_hat, auc=auc, out_png=os.path.join(outdir, "roc_curve.png"))
-    plot_brier_decomp(bdec, out_png=os.path.join(outdir, "brier_decomposition.png"))
     plot_ece_bar(ece, ece_ci, out_png=os.path.join(outdir, "ece_bar.png"))
-    plot_ece_sensitivity(
-        p_hat, y, out_png=os.path.join(outdir, "ece_sensitivity.png"),
-        min_bin_n=min_bin_n, bin_counts=(5, 10, 15, 20, 30, 40, 50),
-        methods=("quantile", "uniform")
-    )
+
     # rolling ECE (best-effort; skip if dates not datelike)
     try:
         plot_rolling_ece(

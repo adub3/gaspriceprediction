@@ -1171,7 +1171,8 @@ def load_and_prepare_data_for_card(
     seq_len: int = 96,
     pred_len: int = 96,
     label_len: int = 48,
-    train_ratio: float = 0.7,
+    signal_decay_rate=0.95,
+    volatility_window=7,
     val_ratio: float = 0.1,
     batch_size: int = 32
 ) -> Tuple[DataLoader, DataLoader, DataLoader, CARDConfig, GlobalNormalizer, np.ndarray]:
@@ -1200,7 +1201,14 @@ def load_and_prepare_data_for_card(
         if date_col in value_cols:
             value_cols.remove(date_col)
     
-    data = df[value_cols].values
+    # Apply volatility-based normalization if window > 1
+    if volatility_window > 1:
+        rolling_std = df[value_cols].rolling(window=volatility_window, min_periods=1, center=True).std()
+        # Replace 0s in rolling_std with 1s to avoid division by zero
+        rolling_std = rolling_std.replace(0, 1)
+        df[value_cols] = df[value_cols] / rolling_std
+
+    if target_col not in value_cols:
     n_channels = len(value_cols)
     
     print(f"\n===== DATA STATS =====")

@@ -53,7 +53,8 @@ def test_basic(args):
                 label_len=48,
                 train_ratio=0.7,
                 val_ratio=0.1,
-                batch_size=16
+                batch_size=args.batch_size,
+                volatility_window=args.volatility_window,
             )
         print("✓ Data loaded successfully")
     except Exception as e:
@@ -162,7 +163,8 @@ def test_full(args):
             label_len=args.label_len,
             train_ratio=0.7,
             val_ratio=0.1,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            volatility_window=args.volatility_window
         )
     
     # Create model
@@ -236,7 +238,8 @@ def test_inference(args):
             seq_len=96,
             pred_len=96,
             label_len=48,
-            batch_size=32
+            batch_size=32,
+            volatility_window=args.volatility_window
         )
     
     # Load checkpoint
@@ -341,6 +344,8 @@ def main():
     parser.add_argument('--pred_len', type=int, default=96)
     parser.add_argument('--label_len', type=int, default=48)
     parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--volatility_window', type=int, default=7,
+                       help='Window size for volatility-based normalization')
     
     # Training arguments
     parser.add_argument('--epochs', type=int, default=50)
